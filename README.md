@@ -2,26 +2,22 @@
 <img width="1024" height="1536" alt="ChatGPT Image Feb 19, 2026, 11_59_04 PM" src="https://github.com/user-attachments/assets/c1a78af5-35f9-4867-a368-a373b8273fcd" />
 
 ---
+# CorpHealth Security Incident Report
+
+- **Incident Type:** Credential Compromise & Endpoint Intrusion
+- **Affected Asset:** CH-OPS-WKS02
+- **Investigation Period:** Nov 21, 2025 – Dec 9, 2025
+
+---
+
+# 1. Executive Summary
+
+A confirmed security incident was identified on workstation **CH-OPS-WKS02**, where an external threat actor gained access using compromised privileged credentials. The attacker executed a full intrusion lifecycle including reconnaissance, privilege escalation, persistence, and command-and-control (C2) activity.
+
+No confirmed data exfiltration occurred; however, multiple staging activities indicate preparation for such actions.
 
 ----
------
-## Executive Summary
 
-This report documents a confirmed security incident involving unauthorized activity on a CorpHealth operational workstation (**CH-OPS-WKS02**). What initially appeared to be routine diagnostic and maintenance activity was determined, through structured threat hunting, to be the result of **credential compromise and malicious misuse of privileged access**.
-
-The investigation identified that an external attacker successfully authenticated to the workstation using valid credentials associated with a privileged account. Following initial access, the attacker performed a sequence of actions consistent with a full intrusion lifecycle, including system reconnaissance, data collection, staging, attempted security control evasion, and persistence establishment.
-
-Key findings include the creation of multiple diagnostic inventory files in CorpHealth-branded directories, indicating deliberate data staging for analysis or exfiltration. The presence of nearly identical files with different hashes across multiple directories strongly suggests iterative data processing rather than legitimate automation. Additional activity revealed suspicious registry modifications consistent with credential inspection or harvesting attempts.
-
-The attacker attempted to weaken endpoint defenses by modifying Windows Defender exclusion settings, demonstrating clear intent to evade detection prior to executing higher-risk payloads. Although this action was blocked, it represents a critical escalation in attacker behavior. The investigation also confirmed the delivery of an external executable via an encrypted tunnel service, followed by persistence mechanisms leveraging scheduled tasks and startup folder placement.
-
-Geolocation enrichment of attacker IP addresses indicates the activity originated from outside the organization’s expected operating regions. The timeline reconstruction shows deliberate, methodical actions rather than opportunistic or automated noise, reinforcing the conclusion that this was a targeted intrusion.
-
-No evidence confirms successful data exfiltration; however, the attacker completed multiple preparatory stages required for such an outcome. The incident underscores the risks associated with credential exposure, over-privileged accounts, and trusted internal tooling being abused to blend malicious activity with legitimate operations.
-
-This report provides a full technical reconstruction of the attack chain, mapped to MITRE ATT&CK, and includes detection opportunities and defensive lessons applicable to enterprise security operations.
-
-------
 
 ## Investigation Methodology
 
@@ -37,15 +33,14 @@ This investigation followed a **hypothesis-driven threat hunting model**:
 
 
 -----
-## Scope and Environment
-
-This investigation was conducted within a controlled corporate endpoint environment supporting internal operations and diagnostics.
 
 ### Organizational Context
 
 - **Company Name:** CorpHealth
 - **Business Function:** Internal endpoint diagnostics, operational monitoring, and maintenance
 - **Environment Type:** Corporate IT Operations (On-Prem + Cloud-integrated)
+
+----- 
 
 ### In-Scope Assets
 The following assets were explicitly included in the scope of this investigation:
@@ -66,109 +61,147 @@ The following assets were explicitly included in the scope of this investigation
   - Startup and persistence locations
   - Windows Registry (HKLM focus)
 ```
-### Telemetry Sources
-The investigation relied exclusively on native security telemetry:
-```kql
-- Microsoft Defender for Endpoint
-  - DeviceProcessEvents
-  - DeviceFileEvents
-  - DeviceNetworkEvents
-  - DeviceRegistryEvents
-  - DeviceLogonEvents
-- Defender geolocation enrichment (`geo_info_from_ip_address()`)
-
-No external OSINT platforms or third-party forensic tools were used.
-```
-### Timeframe
-```kql
-- **Primary Investigation Window:**  
-  `2025-11-21` → `2025-12-09`
-- **Anchor Event:**  
-  First confirmed suspicious logon at `2025-11-23T03:08:31Z`
-```
-### Out-of-Scope
-The following were explicitly excluded from scope:
-```kql
-- Other CorpHealth endpoints not exhibiting related telemetry
-- Email infrastructure and phishing analysis
-- Network firewall logs outside Defender visibility
-- Long-term attribution beyond geolocation enrichment
-
-```
 ---
-## Table of Contents
 
-1. Executive Summary  
-2. Scope & Environment Overview  
-```kql
-3. Investigation Overview  
-   3.1 Case Context  
-   3.2 Data Sources  
-   3.3 Investigation Methodology  
-```
-4. Threat Hunt Timeline & Findings  
-```kql
-   4.1 Flag 0 – Scope Establishment & Device Identification  
-   4.2 Flag 1 – Unique Maintenance Script Identification  
-   4.3 Flag 2 – Initial Outbound Network Activity  
-   4.4 Flag 3 – Beacon Destination Identification  
-   4.5 Flag 4 – Successful Beacon Timestamp  
-   4.6 Flag 5 – Primary Staging Artifact Creation  
-   4.7 Flag 6 – File Hash Identification  
-   4.8 Flag 7 – Secondary Staging Artifact Discovery  
-   4.9 Flag 8 – Suspicious Registry Modification  
-   4.10 Flag 9 – Unauthorized Scheduled Task Creation  
-   4.11 Flag 10 – Registry-Based Persistence Attempt  
-   4.12 Flag 11 – Privilege Escalation Event Timestamp  
-   4.13 Flag 12 – Antivirus Exclusion Attempt  
-   4.14 Flag 13 – Encoded PowerShell Command Execution  
-   4.15 Flag 14 – Privilege Token Modification Process  
-   4.16 Flag 15 – Compromised Token Identity  
-   4.17 Flag 16 – External Tool Ingress  
-   4.18 Flag 17 – External Download Source Identification  
-   4.19 Flag 18 – Execution of Staged Binary  
-   4.20 Flag 19 – External IP Contacted by Malicious Tool  
-   4.21 Flag 20 – Startup Folder Persistence  
-   4.22 Flag 21 – Remote Session Source Device  
-   4.23 Flag 22 – Remote Session Source IP  
-   4.24 Flag 23 – Internal Pivot Host Identification  
-   4.25 Flag 24 – First Suspicious Logon Event  
-   4.26 Flag 25 – Source IP of Initial Logon  
-   4.27 Flag 26 – Compromised Account Identification  
-   4.28 Flag 27 – Attacker Geolocation  
-   4.29 Flag 28 – First Process Executed Post-Logon  
-   4.30 Flag 29 – First File Accessed by Attacker  
-   4.31 Flag 30 – Post-Reconnaissance Activity  
-   4.32 Flag 31 – Subsequent Account Access  
-```
-6. Visual Attack Timeline
 
-```kql 
-   5.1 Mermaid Attack Flow Diagram  
-```
+# 2. Key Investigation Queries (KQL)
 
-7. MITRE ATT&CK Mapping
+## 2.1 Initial Suspicious Logon
 
 ```kql
-   6.1 Initial Access  
-   6.2 Execution  
-   6.3 Persistence  
-   6.4 Privilege Escalation  
-   6.5 Defense Evasion  
-   6.6 Command and Control  
+DeviceLogonEvents
+| where DeviceName == "CH-OPS-WKS02"
+| where AccountName == "chadmin"
+| where RemoteIPType == "Public"
+| project TimeGenerated, AccountName, RemoteIP
+| order by TimeGenerated asc
 ```
-8. Analyst Reasoning & Logical Flow  
 
-9. Detection Gaps & Defensive Opportunities  
+---
 
-10. Conclusion & Incident Assessment  
+## 2.2 Encoded PowerShell Detection
+
 ```kql
-11. Appendix  
-   10.1 Full KQL Queries  
-   10.2 Indicators of Compromise (IOCs)  
-   10.3 Reference Notes  
+DeviceProcessEvents
+| where DeviceName == "CH-OPS-WKS02"
+| where ProcessCommandLine contains "-EncodedCommand"
+| extend Encoded = extract(@"-EncodedCommand\s+([A-Za-z0-9+/=]+)", 1, ProcessCommandLine)
+| extend Decoded = base64_decode_tostring(Encoded)
+| project TimeGenerated, AccountName, Decoded
 ```
+
+---
+
+## 2.3 Suspicious File Staging
+
+```kql
+DeviceFileEvents
+| where DeviceName == "CH-OPS-WKS02"
+| where FolderPath contains "CorpHealth"
+| where ActionType == "FileCreated"
+| project TimeGenerated, FileName, FolderPath, SHA256
+```
+
+---
+
+## 2.4 Persistence via Scheduled Tasks
+
+```kql
+DeviceRegistryEvents
+| where DeviceName == "CH-OPS-WKS02"
+| where RegistryKey contains "TaskCache"
+| project TimeGenerated, RegistryKey, InitiatingProcessFileName
+```
+
+---
+
+## 2.5 Defender Exclusion Attempt
+
+```kql
+DeviceProcessEvents
+| where ProcessCommandLine contains "ExclusionPath"
+| project TimeGenerated, ProcessCommandLine, AccountName
+```
+
+---
+
+## 2.6 External C2 Communication
+
+```kql
+DeviceNetworkEvents
+| where DeviceName == "CH-OPS-WKS02"
+| where RemoteIP !startswith "10." and RemoteIP !startswith "192.168"
+| project TimeGenerated, RemoteIP, RemotePort, InitiatingProcessFileName
+```
+
+---
+
+# 3. Attack Timeline
+
+| Time   | Event                      |
+| ------ | -------------------------- |
+| 03:08  | Initial login (chadmin)    |
+| 03:09  | Explorer launched          |
+| 03:09  | Credential file accessed   |
+| 03:10  | ipconfig executed          |
+| 03:46  | PowerShell script executed |
+| 03:47  | Privilege escalation       |
+| Nov 24 | Data staging               |
+| Nov 25 | Persistence created        |
+| Nov 26 | AV evasion attempt         |
+| Nov 27 | Reverse shell executed     |
+
+---
+
+# 4. MITRE ATT&CK Mapping
+
+* Initial Access: T1078 (Valid Accounts)
+* Execution: T1059.001 (PowerShell)
+* Persistence: T1053.005 (Scheduled Task)
+* Privilege Escalation: T1134 (Token Manipulation)
+* Defense Evasion: T1027 (Obfuscation)
+* Command & Control: T1090 (Proxy / Tunnel)
+
+---
+
+# 5. Detection Opportunities
+
+## High-Value Alerts
+
+* Encoded PowerShell execution
+* Privileged login from foreign IP
+* Creation of scheduled tasks outside baseline
+* Execution from temp directories
+
+---
+
+# 6. Recommendations
+
+## Immediate
+
+* Reset credentials
+* Isolate endpoint
+* Block malicious IPs
+
+## Strategic
+
+* Enforce MFA
+* Implement least privilege
+* Monitor PowerShell activity
+* Block tunneling services
+
+---
+
+## 7. Conclusion
+
+This investigation determined that the activity on **CH-OPS-WKS02** was **malicious**, not legitimate CorpHealth operations. The attacker used valid credentials (`chadmin`) to gain access, performed early reconnaissance and credential discovery, escalated privileges through token manipulation, and established persistence using registry keys, scheduled tasks, and the Startup folder.
+
+Following escalation, the attacker staged and executed an unsigned binary (`revshell.exe`) delivered via an external **ngrok** tunnel and attempted outbound command-and-control communication. Encoded PowerShell usage, short-lived persistence, and selective cleanup indicate deliberate evasion rather than automation errors.
+
+Overall, the evidence confirms a **hands-on intrusion** abusing trusted automation infrastructure, emphasizing the risk of over-privileged service accounts and the need for tighter monitoring of operational tooling and credential use.
+
 -----
+------
 
 ## Findings
 ## Investigation Walkthrough - Flag by Flag - Analyst Explanation
@@ -860,6 +893,8 @@ Accessing the `ops.maintenance` account indicates the attacker began testing or 
 ----
 
 ## End of Flag Explanations
+------
+------
 
 ## MITRE ATT&CK Mapping
 
@@ -944,40 +979,18 @@ Accessing the `ops.maintenance` account indicates the attacker began testing or 
 | **T1567.002** | Exfiltration Over Web Service    | Prepared but not confirmed |
 
 ----
-
-
-
-
-## Timeline
-    title CorpHealth Intrusion Timeline (CH-OPS-WKS02)
-
-    2025-11-23 03:08:31 : External attacker logs in using compromised account (chad)
-    2025-11-23 03:09:14 : GUI session established (explorer.exe)
-    2025-11-23 03:09:22 : First file accessed: user-pass.txt
-    2025-11-23 03:10:01 : Network discovery executed (ipconfig)
-
-    2025-11-23 03:46:08 : PowerShell maintenance script executed
-    2025-11-23 03:47:21 : Privilege escalation attempt detected
-
-    2025-11-24 01:12:09 : Primary inventory CSV staged (CorpHealth Diagnostics)
-    2025-11-24 01:13:41 : Secondary working copy staged (Temp directory)
-
-    2025-11-25 00:42:18 : Suspicious registry key created (Credential harvesting)
-    2025-11-25 00:43:56 : Scheduled task persistence added
-
-    2025-11-26 02:11:08 : Windows Defender exclusion attempted
-    2025-11-27 04:18:33 : Reverse shell downloaded via ngrok tunnel
-
-    2025-11-27 04:19:10 : revshell.exe executed via explorer.exe
-    2025-11-27 04:20:01 : Startup folder persistence established
 ------
 
 
-## Conclusion
 
-This investigation determined that the activity on **CH-OPS-WKS02** was **malicious**, not legitimate CorpHealth operations. The attacker used valid credentials (`chadmin`) to gain access, performed early reconnaissance and credential discovery, escalated privileges through token manipulation, and established persistence using registry keys, scheduled tasks, and the Startup folder.
 
-Following escalation, the attacker staged and executed an unsigned binary (`revshell.exe`) delivered via an external **ngrok** tunnel and attempted outbound command-and-control communication. Encoded PowerShell usage, short-lived persistence, and selective cleanup indicate deliberate evasion rather than automation errors.
 
-Overall, the evidence confirms a **hands-on intrusion** abusing trusted automation infrastructure, emphasizing the risk of over-privileged service accounts and the need for tighter monitoring of operational tooling and credential use.
+
+
+
+
+
+
+Improving identity security and behavioral monitoring is critical to preventing recurrence.
+
 
